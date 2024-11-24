@@ -51,6 +51,8 @@ github.com/newrelic/go-agent/v3 v3.35.1 h1:N43qBNDILmnwLDCSfnE1yy6adyoVEU95nAOtd
 github.com/newrelic/go-agent/v3 v3.35.1/go.mod h1:GNTda53CohAhkgsc7/gqSsJhDZjj8vaky5u+vKz7wqM=
 github.com/newrelic/go-agent/v3/integrations/nrecho-v4 v1.1.2 h1:eGz53UYAOJJeirioQq0J5V2ZmucZh4o+UGZAs7I5UKM=
 github.com/newrelic/go-agent/v3/integrations/nrecho-v4 v1.1.2/go.mod h1:nSDnTXhoJA7Nb4NO03amTIyr2M57/a79I635hHuqX6c=
+github.com/newrelic/go-agent/v3/integrations/nrmysql v1.2.2 h1:JtaJdL4y1hj5mH0JA2XIIIZtOsivsCmG0wsp3cGtoNo=
+github.com/newrelic/go-agent/v3/integrations/nrmysql v1.2.2/go.mod h1:0JZ1gqlaBi9FUrQsg9LLZR357oDH4fGYYTbQQPhOd8o=
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e h1:fD57ERR4JtEqsWbfPhv4DMiApHyliiK5xCTNVSPiaAs=
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=

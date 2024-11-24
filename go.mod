@@ -12,6 +12,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.13
 	github.com/newrelic/go-agent/v3 v3.35.1
 	github.com/newrelic/go-agent/v3/integrations/nrecho-v4 v1.1.2
+	github.com/newrelic/go-agent/v3/integrations/nrmysql v1.2.2
 	github.com/shogo82148/go-sql-proxy v0.6.1
 )
 

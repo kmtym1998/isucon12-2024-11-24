@@ -28,6 +28,7 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
 	"github.com/newrelic/go-agent/v3/integrations/nrecho-v4"
+	_ "github.com/newrelic/go-agent/v3/integrations/nrmysql"
 	"github.com/newrelic/go-agent/v3/newrelic"
 )
 
@@ -69,7 +70,7 @@ func connectAdminDB() (*sqlx.DB, error) {
 	config.DBName = getEnv("ISUCON_DB_NAME", "isuports")
 	config.ParseTime = true
 	dsn := config.FormatDSN()
-	return sqlx.Open("mysql", dsn)
+	return sqlx.Open("nrmysql", dsn)
 }
 
 // テナントDBのパスを返す
