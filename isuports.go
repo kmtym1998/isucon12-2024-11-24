@@ -147,7 +147,7 @@ func Run() {
 	if err != nil {
 		e.Logger.Panicf("error os.Getwd: %s", err)
 	}
-	fmt.Println("== wd ============", wd)
+	e.Logger.Info(fmt.Sprintf("🚨 working directory: %s", wd))
 
 	// sqliteのクエリログを出力する設定
 	// 環境変数 ISUCON_SQLITE_TRACE_FILE を設定すると、そのファイルにクエリログをJSON形式で出力する
