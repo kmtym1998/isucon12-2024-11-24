@@ -524,9 +524,9 @@ func tenantsAddHandler(c echo.Context) error {
 	// NOTE: 先にadminDBに書き込まれることでこのAPIの処理中に
 	//       /api/admin/tenants/billingにアクセスされるとエラーになりそう
 	//       ロックなどで対処したほうが良さそう
-	if err := createTenantDB(id); err != nil {
-		return fmt.Errorf("error createTenantDB: id=%d name=%s %w", id, name, err)
-	}
+	// if err := createTenantDB(id); err != nil {
+	// 	return fmt.Errorf("error createTenantDB: id=%d name=%s %w", id, name, err)
+	// }
 
 	res := TenantsAddHandlerResult{
 		Tenant: TenantWithBilling{
