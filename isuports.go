@@ -13,7 +13,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -216,9 +215,6 @@ func Run() {
 
 // エラー処理関数
 func errorResponseHandler(err error, c echo.Context) {
-	fmt.Println("================================")
-	debug.PrintStack()
-	fmt.Println("================================")
 	c.Logger().Errorf("error at %s: %s", c.Path(), err.Error())
 	var he *echo.HTTPError
 	if errors.As(err, &he) {
