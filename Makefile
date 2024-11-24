@@ -13,3 +13,16 @@ test:
 
 sql:
 	sudo $(MYSQL_CMD)
+
+.PHONY: deploy1
+deploy1:
+	make before
+	make checkout
+	make build
+	sudo systemctl restart nginx
+	sudo systemctl restart isuports
+	sudo systemctl restart mysql
+
+.PHONY: build
+build:
+	go build -o isuports
