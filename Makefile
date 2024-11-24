@@ -25,4 +25,4 @@ deploy1:
 
 .PHONY: build
 build:
-	go build ./cmd/isuports/main.go -o isuports
+	go build -o isuports ./cmd/isuports/main.go
