@@ -65,8 +65,8 @@ func connectAdminDB() (*sqlx.DB, error) {
 	config := mysql.NewConfig()
 	config.Net = "tcp"
 	config.Addr = getEnv("ISUCON_DB_HOST", "127.0.0.1") + ":" + getEnv("ISUCON_DB_PORT", "3306")
-	config.User = getEnv("ISUCON_DB_USER", "isucon")
-	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "isucon")
+	config.User = getEnv("ISUCON_DB_USER", "newrelic")
+	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "newrelic")
 	config.DBName = getEnv("ISUCON_DB_NAME", "isuports")
 	config.ParseTime = true
 	dsn := config.FormatDSN()
@@ -524,9 +524,9 @@ func tenantsAddHandler(c echo.Context) error {
 	// NOTE: 先にadminDBに書き込まれることでこのAPIの処理中に
 	//       /api/admin/tenants/billingにアクセスされるとエラーになりそう
 	//       ロックなどで対処したほうが良さそう
-	// if err := createTenantDB(id); err != nil {
-	// 	return fmt.Errorf("error createTenantDB: id=%d name=%s %w", id, name, err)
-	// }
+	if err := createTenantDB(id); err != nil {
+		return fmt.Errorf("error createTenantDB: id=%d name=%s %w", id, name, err)
+	}
 
 	res := TenantsAddHandlerResult{
 		Tenant: TenantWithBilling{
