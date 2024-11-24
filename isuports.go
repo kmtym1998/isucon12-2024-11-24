@@ -27,6 +27,8 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
+	"github.com/newrelic/go-agent/v3/integrations/nrecho-v4"
+	"github.com/newrelic/go-agent/v3/newrelic"
 )
 
 const (
@@ -151,6 +153,13 @@ func Run() {
 	}
 	defer sqlLogger.Close()
 
+	app, err := newrelic.NewApplication(
+		newrelic.ConfigAppName("isucon-practice"),
+		newrelic.ConfigLicense("43634e667beda6b600e583b453b09abcFFFFNRAL"),
+		newrelic.ConfigAppLogEnabled(false),
+	)
+
+	e.Use(nrecho.Middleware(app))
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(SetCacheControlPrivate)
