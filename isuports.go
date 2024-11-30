@@ -1005,7 +1005,7 @@ func competitionFinishHandler(c echo.Context) error {
 	if _, err := tenantDB.ExecContext(
 		ctx,
 		"UPDATE competition SET billing_yen = ?, finished_at = ?, updated_at = ? WHERE id = ?",
-		billingYen, now, now, id,
+		billingYen.BillingYen, now, now, id,
 	); err != nil {
 		return fmt.Errorf(
 			"error Update competition: finishedAt=%d, updatedAt=%d, id=%s, %w",
