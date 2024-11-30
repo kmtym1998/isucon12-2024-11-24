@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
-	"github.com/gofrs/flock"
 	"github.com/jmoiron/sqlx"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -65,8 +64,8 @@ func connectAdminDB() (*sqlx.DB, error) {
 	config := mysql.NewConfig()
 	config.Net = "tcp"
 	config.Addr = getEnv("ISUCON_DB_HOST", "127.0.0.1") + ":" + getEnv("ISUCON_DB_PORT", "3306")
-	config.User = getEnv("ISUCON_DB_USER", "newrelic")
-	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "newrelic")
+	config.User = getEnv("ISUCON_DB_USER", "isucon")
+	config.Passwd = getEnv("ISUCON_DB_PASSWORD", "isucon")
 	config.DBName = getEnv("ISUCON_DB_NAME", "isuports")
 	config.ParseTime = true
 	dsn := config.FormatDSN()
@@ -367,7 +366,7 @@ func retrieveTenantRowFromHeader(c echo.Context) (*TenantRow, error) {
 	// テナントの存在確認
 	var tenant TenantRow
 	if err := adminDB.GetContext(
-		context.Background(),
+		c.Request().Context(),
 		&tenant,
 		"SELECT * FROM tenant WHERE name = ?",
 		tenantName,
@@ -460,15 +459,13 @@ func lockFilePath(id int64) string {
 	return filepath.Join(tenantDBDir, fmt.Sprintf("%d.lock", id))
 }
 
+type NoopCloser int
+
+func (NoopCloser) Close() error { return nil }
+
 // 排他ロックする
 func flockByTenantID(tenantID int64) (io.Closer, error) {
-	p := lockFilePath(tenantID)
-
-	fl := flock.New(p)
-	if err := fl.Lock(); err != nil {
-		return nil, fmt.Errorf("error flock.Lock: path=%s, %w", p, err)
-	}
-	return fl, nil
+	return NoopCloser(0), nil
 }
 
 type TenantsAddHandlerResult struct {
@@ -500,7 +497,7 @@ func tenantsAddHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
 
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	now := time.Now().Unix()
 	insertRes, err := adminDB.ExecContext(
 		ctx,
@@ -575,6 +572,11 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	comp, err := retrieveCompetition(ctx, tenantDB, competitonID)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
+	}
+
+	// 大会が終了していない場合は、計算不要
+	if !comp.FinishedAt.Valid {
+		return &BillingReport{}, nil
 	}
 
 	// ランキングにアクセスした参加者のIDを取得する
@@ -665,7 +667,7 @@ func tenantsBillingHandler(c echo.Context) error {
 		)
 	}
 
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	if v, err := parseViewer(c); err != nil {
 		return err
 	} else if v.role != RoleAdmin {
@@ -758,7 +760,7 @@ type PlayersListHandlerResult struct {
 // GET /api/organizer/players
 // 参加者一覧を返す
 func playersListHandler(c echo.Context) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	v, err := parseViewer(c)
 	if err != nil {
 		return err
@@ -804,7 +806,7 @@ type PlayersAddHandlerResult struct {
 // GET /api/organizer/players/add
 // テナントに参加者を追加する
 func playersAddHandler(c echo.Context) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	v, err := parseViewer(c)
 	if err != nil {
 		return fmt.Errorf("error parseViewer: %w", err)
@@ -867,7 +869,7 @@ type PlayerDisqualifiedHandlerResult struct {
 // POST /api/organizer/player/:player_id/disqualified
 // 参加者を失格にする
 func playerDisqualifiedHandler(c echo.Context) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	v, err := parseViewer(c)
 	if err != nil {
 		return fmt.Errorf("error parseViewer: %w", err)
@@ -927,7 +929,7 @@ type CompetitionsAddHandlerResult struct {
 // POST /api/organizer/competitions/add
 // 大会を追加する
 func competitionsAddHandler(c echo.Context) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	v, err := parseViewer(c)
 	if err != nil {
 		return fmt.Errorf("error parseViewer: %w", err)
@@ -973,7 +975,7 @@ func competitionsAddHandler(c echo.Context) error {
 // POST /api/organizer/competition/:competition_id/finish
 // 大会を終了する
 func competitionFinishHandler(c echo.Context) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	v, err := parseViewer(c)
 	if err != nil {
 		return fmt.Errorf("error parseViewer: %w", err)
@@ -1148,7 +1150,12 @@ func competitionScoreHandler(c echo.Context) error {
 	}
 	seg5.End()
 	seg6 := nrTx.StartSegment("competitionScoreHandler.deleteInsertPlayerScore")
-	if _, err := tenantDB.ExecContext(
+	tx, err := tenantDB.BeginTxx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("error BeginTxx: %w", err)
+	}
+
+	if _, err := tx.ExecContext(
 		ctx,
 		"DELETE FROM player_score WHERE tenant_id = ? AND competition_id = ?",
 		v.tenantID,
@@ -1157,7 +1164,7 @@ func competitionScoreHandler(c echo.Context) error {
 		return fmt.Errorf("error Delete player_score: tenantID=%d, competitionID=%s, %w", v.tenantID, competitionID, err)
 	}
 	for _, ps := range playerScoreRows {
-		if _, err := tenantDB.NamedExecContext(
+		if _, err := tx.NamedExecContext(
 			ctx,
 			"INSERT INTO player_score (id, tenant_id, player_id, competition_id, score, row_num, created_at, updated_at) VALUES (:id, :tenant_id, :player_id, :competition_id, :score, :row_num, :created_at, :updated_at)",
 			ps,
@@ -1168,6 +1175,10 @@ func competitionScoreHandler(c echo.Context) error {
 			)
 
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		tx.Rollback()
+		return fmt.Errorf("error Commit: %w", err)
 	}
 	seg6.End()
 
@@ -1185,7 +1196,7 @@ type BillingHandlerResult struct {
 // GET /api/organizer/billing
 // テナント内の課金レポートを取得する
 func billingHandler(c echo.Context) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	v, err := parseViewer(c)
 	if err != nil {
 		return fmt.Errorf("error parseViewer: %w", err)
@@ -1241,7 +1252,7 @@ type PlayerHandlerResult struct {
 // GET /api/player/player/:player_id
 // 参加者の詳細情報を取得する
 func playerHandler(c echo.Context) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 
 	v, err := parseViewer(c)
 	if err != nil {
@@ -1356,7 +1367,7 @@ func competitionRankingHandler(c echo.Context) error {
 	seg := nrTx.StartSegment("competitionRankingHandler")
 	defer seg.End()
 
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	v, err := parseViewer(c)
 	if err != nil {
 		return err
@@ -1512,7 +1523,7 @@ type CompetitionsHandlerResult struct {
 // GET /api/player/competitions
 // 大会の一覧を取得する
 func playerCompetitionsHandler(c echo.Context) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 
 	v, err := parseViewer(c)
 	if err != nil {
@@ -1556,7 +1567,7 @@ func organizerCompetitionsHandler(c echo.Context) error {
 }
 
 func competitionsHandler(c echo.Context, v *Viewer, tenantDB dbOrTx) error {
-	ctx := context.Background()
+	ctx := c.Request().Context()
 
 	cs := []CompetitionRow{}
 	if err := tenantDB.SelectContext(
@@ -1641,7 +1652,7 @@ func meHandler(c echo.Context) error {
 	if err != nil {
 		return fmt.Errorf("error connectToTenantDB: %w", err)
 	}
-	ctx := context.Background()
+	ctx := c.Request().Context()
 	p, err := retrievePlayer(ctx, tenantDB, v.playerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1684,6 +1695,8 @@ type InitializeHandlerResult struct {
 func initializeHandler(c echo.Context) error {
 	out, err := exec.Command(initializeScript).CombinedOutput()
 	if err != nil {
+		fmt.Println("🚨 out: ", string(out))
+		fmt.Println("🚨 err: ", string(out))
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
 	}
 	res := InitializeHandlerResult{
