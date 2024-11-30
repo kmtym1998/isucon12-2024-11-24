@@ -715,11 +715,16 @@ func tenantsBillingHandler(c echo.Context) error {
 				return fmt.Errorf("failed to Select competition: %w", err)
 			}
 			for _, comp := range cs {
-				report, err := billingReportByCompetition(ctx, tenantDB, t.ID, comp.ID)
-				if err != nil {
-					return fmt.Errorf("failed to billingReportByCompetition: %w", err)
+				if comp.BillingYen.Valid {
+					tb.BillingYen += comp.BillingYen.Int64
+				} else {
+					// 整合性チェック用のコード
+					result, err := billingReportByCompetition(ctx, tenantDB, t.ID, comp.ID)
+					if err != nil {
+						return fmt.Errorf("failed to billingReportByCompetition: %w", err)
+					}
+					tb.BillingYen += result.BillingYen
 				}
-				tb.BillingYen += report.BillingYen
 			}
 			tenantBillings = append(tenantBillings, tb)
 			return nil
@@ -1006,6 +1011,22 @@ func competitionFinishHandler(c echo.Context) error {
 			now, now, id, err,
 		)
 	}
+
+	report, err := billingReportByCompetition(ctx, tenantDB, v.tenantID, id)
+	if err != nil {
+		return fmt.Errorf("error billingReportByCompetition: %w", err)
+	}
+	if _, err := tenantDB.ExecContext(
+		ctx,
+		"UPDATE competition SET billing_yen = ?, updated_at = ? WHERE id = ?",
+		report.BillingYen, now, id,
+	); err != nil {
+		return fmt.Errorf(
+			"error Update competition: finishedAt=%d, updatedAt=%d, id=%s, %w",
+			now, now, id, err,
+		)
+	}
+
 	return c.JSON(http.StatusOK, SuccessResult{Status: true})
 }
 
@@ -1718,6 +1739,18 @@ func initializeHandler(c echo.Context) error {
 		fmt.Println("🚨 out: ", string(out))
 		fmt.Println("🚨 err: ", string(out))
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
+	}
+	for i := 0; i < 100; i++ {
+		sql, err := connectToTenantDB(int64(i + 1))
+		if err != nil {
+			return fmt.Errorf("error connectToTenantDB: %w", err)
+		}
+		defer sql.Close()
+
+		_, err = sql.Exec("ALTER TABLE competition ADD COLUMN billing_yen BIGINT;")
+		if err != nil {
+			return fmt.Errorf("error exec: %w", err)
+		}
 	}
 	res := InitializeHandlerResult{
 		Lang: "go",
