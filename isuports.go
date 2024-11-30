@@ -430,8 +430,8 @@ type CompetitionRow struct {
 	Title      string        `db:"title"`
 	FinishedAt sql.NullInt64 `db:"finished_at"`
 	BillingYen sql.NullInt64 `db:"billing_yen"`
-	CreatedAt  int64         `db:"created_at"`
-	UpdatedAt  int64         `db:"updated_at"`
+	CreatedAt int64 `db:"created_at"`
+	UpdatedAt int64 `db:"updated_at"`
 }
 
 // 大会を取得する
@@ -718,9 +718,11 @@ func tenantsBillingHandler(c echo.Context) error {
 				return fmt.Errorf("failed to Select competition: %w", err)
 			}
 			for _, comp := range cs {
-				if comp.FinishedAt.Valid {
-					tb.BillingYen += comp.BillingYen.Int64
+				report, err := billingReportByCompetition(ctx, tenantDB, t.ID, comp.ID)
+				if err != nil {
+					return fmt.Errorf("failed to billingReportByCompetition: %w", err)
 				}
+				tb.BillingYen += report.BillingYen
 			}
 			tenantBillings = append(tenantBillings, tb)
 			return nil
@@ -996,16 +998,11 @@ func competitionFinishHandler(c echo.Context) error {
 		return fmt.Errorf("error retrieveCompetition: %w", err)
 	}
 
-	billingYen, err := billingReportByCompetition(ctx, tenantDB, v.tenantID, id)
-	if err != nil {
-		return fmt.Errorf("error billingReportByCompetition: %w", err)
-	}
-
 	now := time.Now().Unix()
 	if _, err := tenantDB.ExecContext(
 		ctx,
-		"UPDATE competition SET billing_yen = ?, finished_at = ?, updated_at = ? WHERE id = ?",
-		billingYen.BillingYen, now, now, id,
+		"UPDATE competition SET finished_at = ?, updated_at = ? WHERE id = ?",
+		now, now, id,
 	); err != nil {
 		return fmt.Errorf(
 			"error Update competition: finishedAt=%d, updatedAt=%d, id=%s, %w",
