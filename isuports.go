@@ -1019,7 +1019,12 @@ type ScoreHandlerResult struct {
 // POST /api/organizer/competition/:competition_id/score
 // 大会のスコアをCSVでアップロードする
 func competitionScoreHandler(c echo.Context) error {
+	nrTx := nrecho.FromContext(c)
+	seg := nrTx.StartSegment("competitionScoreHandler")
+	defer seg.End()
+
 	ctx := c.Request().Context()
+
 	v, err := parseViewer(c)
 	if err != nil {
 		return fmt.Errorf("error parseViewer: %w", err)
@@ -1027,17 +1032,20 @@ func competitionScoreHandler(c echo.Context) error {
 	if v.role != RoleOrganizer {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
-
+	seg1 := nrTx.StartSegment("competitionScoreHandler.connectToTenantDB")
 	tenantDB, err := connectToTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
 	defer tenantDB.Close()
+	seg1.End()
 
 	competitionID := c.Param("competition_id")
 	if competitionID == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "competition_id required")
 	}
+
+	seg2 := nrTx.StartSegment("competitionScoreHandler.retrieveCompetition")
 	comp, err := retrieveCompetition(ctx, tenantDB, competitionID)
 	if err != nil {
 		// 存在しない大会
@@ -1046,6 +1054,7 @@ func competitionScoreHandler(c echo.Context) error {
 		}
 		return fmt.Errorf("error retrieveCompetition: %w", err)
 	}
+	seg2.End()
 	if comp.FinishedAt.Valid {
 		res := FailureResult{
 			Status:  false,
@@ -1054,6 +1063,7 @@ func competitionScoreHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, res)
 	}
 
+	seg3 := nrTx.StartSegment("competitionScoreHandler.formFile")
 	fh, err := c.FormFile("scores")
 	if err != nil {
 		return fmt.Errorf("error c.FormFile(scores): %w", err)
@@ -1073,12 +1083,18 @@ func competitionScoreHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid CSV headers")
 	}
 
+	seg3.End()
+
+	seg4 := nrTx.StartSegment("competitionScoreHandler.flockByTenantID")
 	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
 	fl, err := flockByTenantID(v.tenantID)
 	if err != nil {
 		return fmt.Errorf("error flockByTenantID: %w", err)
 	}
 	defer fl.Close()
+	seg4.End()
+
+	seg5 := nrTx.StartSegment("competitionScoreHandler.loopCSV")
 	var rowNum int64
 	playerScoreRows := []PlayerScoreRow{}
 	for {
@@ -1127,7 +1143,8 @@ func competitionScoreHandler(c echo.Context) error {
 			UpdatedAt:     now,
 		})
 	}
-
+	seg5.End()
+	seg6 := nrTx.StartSegment("competitionScoreHandler.deleteInsertPlayerScore")
 	tx, err := tenantDB.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error BeginTxx: %w", err)
@@ -1154,11 +1171,11 @@ func competitionScoreHandler(c echo.Context) error {
 
 		}
 	}
-
 	if err := tx.Commit(); err != nil {
 		tx.Rollback()
 		return fmt.Errorf("error Commit: %w", err)
 	}
+	seg6.End()
 
 	return c.JSON(http.StatusOK, SuccessResult{
 		Status: true,
