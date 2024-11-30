@@ -1262,6 +1262,9 @@ type PlayerHandlerResult struct {
 // 参加者の詳細情報を取得する
 func playerHandler(c echo.Context) error {
 	ctx := c.Request().Context()
+	nrTx := nrecho.FromContext(c)
+	seg := nrTx.StartSegment("playerHandler")
+	defer seg.End()
 
 	v, err := parseViewer(c)
 	if err != nil {
@@ -1271,20 +1274,26 @@ func playerHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role player required")
 	}
 
+	seg1 := nrTx.StartSegment("playerHandler.connectToTenantDB")
 	tenantDB, err := connectToTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
 	defer tenantDB.Close()
+	seg1.End()
 
+	seg2 := nrTx.StartSegment("playerHandler.authorizePlayer")
 	if err := authorizePlayer(ctx, tenantDB, v.playerID); err != nil {
 		return err
 	}
+	seg2.End()
 
 	playerID := c.Param("player_id")
 	if playerID == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "player_id is required")
 	}
+
+	seg3 := nrTx.StartSegment("playerHandler.retrievePlayer")
 	p, err := retrievePlayer(ctx, tenantDB, playerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1292,6 +1301,9 @@ func playerHandler(c echo.Context) error {
 		}
 		return fmt.Errorf("error retrievePlayer: %w", err)
 	}
+	seg3.End()
+
+	seg4 := nrTx.StartSegment("playerHandler.`SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC`")
 	cs := []CompetitionRow{}
 	if err := tenantDB.SelectContext(
 		ctx,
@@ -1301,13 +1313,9 @@ func playerHandler(c echo.Context) error {
 	); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("error Select competition: %w", err)
 	}
+	seg4.End()
 
-	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
-	fl, err := flockByTenantID(v.tenantID)
-	if err != nil {
-		return fmt.Errorf("error flockByTenantID: %w", err)
-	}
-	defer fl.Close()
+	seg5 := nrTx.StartSegment("playerHandler.loop.GetContext")
 	pss := make([]PlayerScoreRow, 0, len(cs))
 	for _, c := range cs {
 		ps := PlayerScoreRow{}
@@ -1328,7 +1336,9 @@ func playerHandler(c echo.Context) error {
 		}
 		pss = append(pss, ps)
 	}
+	seg5.End()
 
+	seg6 := nrTx.StartSegment("playerHandler.loop.retrieveCompetition")
 	psds := make([]PlayerScoreDetail, 0, len(pss))
 	for _, ps := range pss {
 		comp, err := retrieveCompetition(ctx, tenantDB, ps.CompetitionID)
@@ -1340,6 +1350,7 @@ func playerHandler(c echo.Context) error {
 			Score:            ps.Score,
 		})
 	}
+	seg6.End()
 
 	res := SuccessResult{
 		Status: true,
