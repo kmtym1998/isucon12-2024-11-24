@@ -429,8 +429,9 @@ type CompetitionRow struct {
 	ID         string        `db:"id"`
 	Title      string        `db:"title"`
 	FinishedAt sql.NullInt64 `db:"finished_at"`
-	CreatedAt  int64         `db:"created_at"`
-	UpdatedAt  int64         `db:"updated_at"`
+	BillingYen sql.NullInt64 `db:"billing_yen"`
+	CreatedAt int64 `db:"created_at"`
+	UpdatedAt int64 `db:"updated_at"`
 }
 
 // 大会を取得する
