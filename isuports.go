@@ -448,8 +448,8 @@ type CompetitionRow struct {
 	Title      string        `db:"title"`
 	FinishedAt sql.NullInt64 `db:"finished_at"`
 	BillingYen sql.NullInt64 `db:"billing_yen"`
-	CreatedAt int64 `db:"created_at"`
-	UpdatedAt int64 `db:"updated_at"`
+	CreatedAt  int64         `db:"created_at"`
+	UpdatedAt  int64         `db:"updated_at"`
 }
 
 // 大会を取得する
@@ -1165,21 +1165,16 @@ func competitionScoreHandler(c echo.Context) error {
 				fmt.Sprintf("error strconv.ParseUint: scoreStr=%s, %s", scoreStr, err),
 			)
 		}
-		// ここDB使わんくてもよくない？
-		id, err := dispenseID(ctx)
-		if err != nil {
-			return fmt.Errorf("error dispenseID: %w", err)
-		}
-		now := time.Now().Unix()
+		now := time.Now()
 		playerScoreRows = append(playerScoreRows, PlayerScoreRow{
-			ID:            id,
+			ID:            fmt.Sprintf("%x", now.UnixNano()),
 			TenantID:      v.tenantID,
 			PlayerID:      playerID,
 			CompetitionID: competitionID,
 			Score:         score,
 			RowNum:        rowNum,
-			CreatedAt:     now,
-			UpdatedAt:     now,
+			CreatedAt:     now.Unix(),
+			UpdatedAt:     now.Unix(),
 		})
 	}
 	seg5.End()
