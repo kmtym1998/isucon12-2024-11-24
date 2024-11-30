@@ -430,8 +430,8 @@ type CompetitionRow struct {
 	Title      string        `db:"title"`
 	FinishedAt sql.NullInt64 `db:"finished_at"`
 	BillingYen sql.NullInt64 `db:"billing_yen"`
-	CreatedAt int64 `db:"created_at"`
-	UpdatedAt int64 `db:"updated_at"`
+	CreatedAt  int64         `db:"created_at"`
+	UpdatedAt  int64         `db:"updated_at"`
 }
 
 // 大会を取得する
@@ -569,7 +569,7 @@ type VisitHistorySummaryRow struct {
 }
 
 // 大会ごとの課金レポートを計算する
-func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitonID string) (*BillingReport, error) {
+func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID int64, competitonID string, shouldCalculateBilling bool) (*BillingReport, error) {
 	comp, err := retrieveCompetition(ctx, tenantDB, competitonID)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
@@ -619,7 +619,7 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 
 	// 大会が終了している場合のみ請求金額が確定するので計算する
 	var playerCount, visitorCount int64
-	if comp.FinishedAt.Valid {
+	if shouldCalculateBilling {
 		for _, category := range billingMap {
 			switch category {
 			case "player":
@@ -718,11 +718,9 @@ func tenantsBillingHandler(c echo.Context) error {
 				return fmt.Errorf("failed to Select competition: %w", err)
 			}
 			for _, comp := range cs {
-				report, err := billingReportByCompetition(ctx, tenantDB, t.ID, comp.ID)
-				if err != nil {
-					return fmt.Errorf("failed to billingReportByCompetition: %w", err)
+				if comp.FinishedAt.Valid {
+					tb.BillingYen += comp.BillingYen.Int64
 				}
-				tb.BillingYen += report.BillingYen
 			}
 			tenantBillings = append(tenantBillings, tb)
 			return nil
@@ -998,11 +996,16 @@ func competitionFinishHandler(c echo.Context) error {
 		return fmt.Errorf("error retrieveCompetition: %w", err)
 	}
 
+	billingYen, err := billingReportByCompetition(ctx, tenantDB, v.tenantID, id, true)
+	if err != nil {
+		return fmt.Errorf("error billingReportByCompetition: %w", err)
+	}
+
 	now := time.Now().Unix()
 	if _, err := tenantDB.ExecContext(
 		ctx,
-		"UPDATE competition SET finished_at = ?, updated_at = ? WHERE id = ?",
-		now, now, id,
+		"UPDATE competition SET billing_yen = ?, finished_at = ?, updated_at = ? WHERE id = ?",
+		billingYen.BillingYen, now, now, id,
 	); err != nil {
 		return fmt.Errorf(
 			"error Update competition: finishedAt=%d, updatedAt=%d, id=%s, %w",
@@ -1218,7 +1221,7 @@ func billingHandler(c echo.Context) error {
 	}
 	tbrs := make([]BillingReport, 0, len(cs))
 	for _, comp := range cs {
-		report, err := billingReportByCompetition(ctx, tenantDB, v.tenantID, comp.ID)
+		report, err := billingReportByCompetition(ctx, tenantDB, v.tenantID, comp.ID, false)
 		if err != nil {
 			return fmt.Errorf("error billingReportByCompetition: %w", err)
 		}
