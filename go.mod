@@ -9,9 +9,6 @@ require (
 	github.com/labstack/gommon v0.3.1
 	github.com/lestrrat-go/jwx/v2 v2.0.2
 	github.com/mattn/go-sqlite3 v1.14.13
-	github.com/newrelic/go-agent/v3 v3.35.1
-	github.com/newrelic/go-agent/v3/integrations/nrecho-v4 v1.1.2
-	github.com/newrelic/go-agent/v3/integrations/nrmysql v1.2.2
 	github.com/shogo82148/go-sql-proxy v0.6.1
 )
 
@@ -33,7 +30,4 @@ require (
 	golang.org/x/sys v0.20.0 // indirect
 	golang.org/x/text v0.15.0 // indirect
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240528184218-531527333157 // indirect
-	google.golang.org/grpc v1.65.0 // indirect
-	google.golang.org/protobuf v1.34.2 // indirect
 )

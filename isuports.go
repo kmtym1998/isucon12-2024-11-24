@@ -26,9 +26,6 @@ import (
 	"github.com/lestrrat-go/jwx/v2/jwa"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
-	"github.com/newrelic/go-agent/v3/integrations/nrecho-v4"
-	_ "github.com/newrelic/go-agent/v3/integrations/nrmysql"
-	"github.com/newrelic/go-agent/v3/newrelic"
 )
 
 const (
@@ -69,7 +66,7 @@ func connectAdminDB() (*sqlx.DB, error) {
 	config.DBName = getEnv("ISUCON_DB_NAME", "isuports")
 	config.ParseTime = true
 	dsn := config.FormatDSN()
-	return sqlx.Open("nrmysql", dsn)
+	return sqlx.Open("mysql", dsn)
 }
 
 // テナントDBのパスを返す
@@ -90,9 +87,6 @@ func connectToTenantDB(id int64) (*sqlx.DB, error) {
 
 // テナントDBに接続する
 func connectToTenantDBContext(c echo.Context, id int64) (*sqlx.DB, error) {
-	nrTx := nrecho.FromContext(c)
-	defer nrTx.End()
-
 	p := tenantDBPath(id)
 	db, err := sqlx.Open(sqliteDriverName, fmt.Sprintf("file:%s?mode=rw", p))
 	if err != nil {
@@ -151,13 +145,6 @@ func Run() {
 	}
 	defer sqlLogger.Close()
 
-	app, err := newrelic.NewApplication(
-		newrelic.ConfigAppName("isucon-practice"),
-		newrelic.ConfigLicense("43634e667beda6b600e583b453b09abcFFFFNRAL"),
-		newrelic.ConfigAppLogEnabled(false),
-	)
-
-	e.Use(nrecho.Middleware(app))
 	e.Use(middleware.Logger())
 	e.Use(middleware.Recover())
 	e.Use(SetCacheControlPrivate)
@@ -240,10 +227,6 @@ type Viewer struct {
 
 // リクエストヘッダをパースしてViewerを返す
 func parseViewer(c echo.Context) (*Viewer, error) {
-	nrTx := nrecho.FromContext(c)
-	seg := newrelic.StartSegment(nrTx, "parseViewer")
-	defer seg.End()
-
 	cookie, err := c.Request().Cookie(cookieName)
 	if err != nil {
 		return nil, echo.NewHTTPError(
@@ -1038,10 +1021,6 @@ type ScoreHandlerResult struct {
 // POST /api/organizer/competition/:competition_id/score
 // 大会のスコアをCSVでアップロードする
 func competitionScoreHandler(c echo.Context) error {
-	nrTx := nrecho.FromContext(c)
-	seg := nrTx.StartSegment("competitionScoreHandler")
-	defer seg.End()
-
 	ctx := c.Request().Context()
 
 	v, err := parseViewer(c)
@@ -1051,20 +1030,17 @@ func competitionScoreHandler(c echo.Context) error {
 	if v.role != RoleOrganizer {
 		return echo.NewHTTPError(http.StatusForbidden, "role organizer required")
 	}
-	seg1 := nrTx.StartSegment("competitionScoreHandler.connectToTenantDB")
 	tenantDB, err := connectToTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
 	defer tenantDB.Close()
-	seg1.End()
 
 	competitionID := c.Param("competition_id")
 	if competitionID == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "competition_id required")
 	}
 
-	seg2 := nrTx.StartSegment("competitionScoreHandler.retrieveCompetition")
 	comp, err := retrieveCompetition(ctx, tenantDB, competitionID)
 	if err != nil {
 		// 存在しない大会
@@ -1073,7 +1049,6 @@ func competitionScoreHandler(c echo.Context) error {
 		}
 		return fmt.Errorf("error retrieveCompetition: %w", err)
 	}
-	seg2.End()
 	if comp.FinishedAt.Valid {
 		res := FailureResult{
 			Status:  false,
@@ -1082,7 +1057,6 @@ func competitionScoreHandler(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, res)
 	}
 
-	seg3 := nrTx.StartSegment("competitionScoreHandler.formFile")
 	fh, err := c.FormFile("scores")
 	if err != nil {
 		return fmt.Errorf("error c.FormFile(scores): %w", err)
@@ -1102,18 +1076,13 @@ func competitionScoreHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusBadRequest, "invalid CSV headers")
 	}
 
-	seg3.End()
-
-	seg4 := nrTx.StartSegment("competitionScoreHandler.flockByTenantID")
 	// / DELETEしたタイミングで参照が来ると空っぽのランキングになるのでロックする
 	fl, err := flockByTenantID(v.tenantID)
 	if err != nil {
 		return fmt.Errorf("error flockByTenantID: %w", err)
 	}
 	defer fl.Close()
-	seg4.End()
 
-	seg5 := nrTx.StartSegment("competitionScoreHandler.loopCSV")
 	var rowNum int64
 	playerScoreRows := []PlayerScoreRow{}
 
@@ -1177,9 +1146,6 @@ func competitionScoreHandler(c echo.Context) error {
 			UpdatedAt:     now.Unix(),
 		})
 	}
-	seg5.End()
-
-	seg6 := nrTx.StartSegment("competitionScoreHandler.deleteInsertPlayerScore")
 	tx, err := tenantDB.BeginTxx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("error BeginTxx: %w", err)
@@ -1210,7 +1176,6 @@ func competitionScoreHandler(c echo.Context) error {
 		tx.Rollback()
 		return fmt.Errorf("error Commit: %w", err)
 	}
-	seg6.End()
 
 	return c.JSON(http.StatusOK, SuccessResult{
 		Status: true,
@@ -1283,9 +1248,6 @@ type PlayerHandlerResult struct {
 // 参加者の詳細情報を取得する
 func playerHandler(c echo.Context) error {
 	ctx := c.Request().Context()
-	nrTx := nrecho.FromContext(c)
-	seg := nrTx.StartSegment("playerHandler")
-	defer seg.End()
 
 	v, err := parseViewer(c)
 	if err != nil {
@@ -1295,26 +1257,21 @@ func playerHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role player required")
 	}
 
-	seg1 := nrTx.StartSegment("playerHandler.connectToTenantDB")
 	tenantDB, err := connectToTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
 	defer tenantDB.Close()
-	seg1.End()
 
-	seg2 := nrTx.StartSegment("playerHandler.authorizePlayer")
 	if err := authorizePlayer(ctx, tenantDB, v.playerID); err != nil {
 		return err
 	}
-	seg2.End()
 
 	playerID := c.Param("player_id")
 	if playerID == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "player_id is required")
 	}
 
-	seg3 := nrTx.StartSegment("playerHandler.retrievePlayer")
 	p, err := retrievePlayer(ctx, tenantDB, playerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1322,9 +1279,7 @@ func playerHandler(c echo.Context) error {
 		}
 		return fmt.Errorf("error retrievePlayer: %w", err)
 	}
-	seg3.End()
 
-	seg4 := nrTx.StartSegment("playerHandler.`SELECT * FROM competition WHERE tenant_id = ? ORDER BY created_at ASC`")
 	cs := []CompetitionRow{}
 	if err := tenantDB.SelectContext(
 		ctx,
@@ -1334,9 +1289,7 @@ func playerHandler(c echo.Context) error {
 	); err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("error Select competition: %w", err)
 	}
-	seg4.End()
 
-	seg5 := nrTx.StartSegment("playerHandler.loop.GetContext")
 	pss := make([]PlayerScoreRow, 0, len(cs))
 	for _, c := range cs {
 		ps := PlayerScoreRow{}
@@ -1357,9 +1310,7 @@ func playerHandler(c echo.Context) error {
 		}
 		pss = append(pss, ps)
 	}
-	seg5.End()
 
-	seg6 := nrTx.StartSegment("playerHandler.loop.retrieveCompetition")
 	psds := make([]PlayerScoreDetail, 0, len(pss))
 	for _, ps := range pss {
 		comp, err := retrieveCompetition(ctx, tenantDB, ps.CompetitionID)
@@ -1371,7 +1322,6 @@ func playerHandler(c echo.Context) error {
 			Score:            ps.Score,
 		})
 	}
-	seg6.End()
 
 	res := SuccessResult{
 		Status: true,
@@ -1404,10 +1354,6 @@ type CompetitionRankingHandlerResult struct {
 // GET /api/player/competition/:competition_id/ranking
 // 大会ごとのランキングを取得する
 func competitionRankingHandler(c echo.Context) error {
-	nrTx := nrecho.FromContext(c)
-	seg := nrTx.StartSegment("competitionRankingHandler")
-	defer seg.End()
-
 	ctx := c.Request().Context()
 	v, err := parseViewer(c)
 	if err != nil {
@@ -1417,26 +1363,21 @@ func competitionRankingHandler(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusForbidden, "role player required")
 	}
 
-	seg1 := nrTx.StartSegment("competitionRankingHandler.connectToTenantDB")
 	tenantDB, err := connectToTenantDB(v.tenantID)
 	if err != nil {
 		return err
 	}
 	defer tenantDB.Close()
-	seg1.End()
 
-	seg2 := nrTx.StartSegment("competitionRankingHandler.authorizePlayer")
 	if err := authorizePlayer(ctx, tenantDB, v.playerID); err != nil {
 		return err
 	}
-	seg2.End()
 
 	competitionID := c.Param("competition_id")
 	if competitionID == "" {
 		return echo.NewHTTPError(http.StatusBadRequest, "competition_id is required")
 	}
 
-	seg3 := nrTx.StartSegment("competitionRankingHandler.retrieveCompetition")
 	// 大会の存在確認
 	competition, err := retrieveCompetition(ctx, tenantDB, competitionID)
 	if err != nil {
@@ -1445,17 +1386,13 @@ func competitionRankingHandler(c echo.Context) error {
 		}
 		return fmt.Errorf("error retrieveCompetition: %w", err)
 	}
-	seg3.End()
 
-	seg4 := nrTx.StartSegment("competitionRankingHandler.retrievePlayer")
 	now := time.Now().Unix()
 	var tenant TenantRow
 	if err := adminDB.GetContext(ctx, &tenant, "SELECT * FROM tenant WHERE id = ?", v.tenantID); err != nil {
 		return fmt.Errorf("error Select tenant: id=%d, %w", v.tenantID, err)
 	}
-	seg4.End()
 
-	seg5 := nrTx.StartSegment("competitionRankingHandler.insertVisitHistory")
 	if _, err := adminDB.ExecContext(
 		ctx,
 		"INSERT INTO visit_history (player_id, tenant_id, competition_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -1466,7 +1403,6 @@ func competitionRankingHandler(c echo.Context) error {
 			v.playerID, tenant.ID, competitionID, now, now, err,
 		)
 	}
-	seg5.End()
 
 	var rankAfter int64
 	rankAfterStr := c.QueryParam("rank_after")
@@ -1476,16 +1412,13 @@ func competitionRankingHandler(c echo.Context) error {
 		}
 	}
 
-	seg6 := nrTx.StartSegment("competitionRankingHandler.flockByTenantID")
 	// player_scoreを読んでいるときに更新が走ると不整合が起こるのでロックを取得する
 	fl, err := flockByTenantID(v.tenantID)
 	if err != nil {
 		return fmt.Errorf("error flockByTenantID: %w", err)
 	}
 	defer fl.Close()
-	seg6.End()
 
-	seg7 := nrTx.StartSegment("competitionRankingHandler.retrievePlayerScore")
 	pss := []PlayerScoreRow{}
 	if err := tenantDB.SelectContext(
 		ctx,
@@ -1496,7 +1429,6 @@ func competitionRankingHandler(c echo.Context) error {
 	); err != nil {
 		return fmt.Errorf("error Select player_score: tenantID=%d, competitionID=%s, %w", tenant.ID, competitionID, err)
 	}
-	seg7.End()
 
 	ranks := make([]CompetitionRank, 0, len(pss))
 	scoredPlayerSet := make(map[string]struct{}, len(pss))
@@ -1507,12 +1439,10 @@ func competitionRankingHandler(c echo.Context) error {
 			continue
 		}
 		scoredPlayerSet[ps.PlayerID] = struct{}{}
-		seg8 := nrTx.StartSegment("competitionRankingHandler.retrievePlayer")
 		p, err := retrievePlayer(ctx, tenantDB, ps.PlayerID)
 		if err != nil {
 			return fmt.Errorf("error retrievePlayer: %w", err)
 		}
-		seg8.End()
 		ranks = append(ranks, CompetitionRank{
 			Score:             ps.Score,
 			PlayerID:          p.ID,
