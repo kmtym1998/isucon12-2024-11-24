@@ -1716,6 +1716,18 @@ func initializeHandler(c echo.Context) error {
 		fmt.Println("🚨 err: ", string(out))
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
 	}
+	for i := 0; i < 100; i++ {
+		sql, err := connectToTenantDB(int64(i + 1))
+		if err != nil {
+			return fmt.Errorf("error connectToTenantDB: %w", err)
+		}
+		defer sql.Close()
+
+		_, err = sql.Exec("ALTER TABLE competition ADD COLUMN billing_yen BIGINT;")
+		if err != nil {
+			return fmt.Errorf("error exec: %w", err)
+		}
+	}
 	res := InitializeHandlerResult{
 		Lang: "go",
 	}
