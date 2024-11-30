@@ -447,8 +447,9 @@ type CompetitionRow struct {
 	ID         string        `db:"id"`
 	Title      string        `db:"title"`
 	FinishedAt sql.NullInt64 `db:"finished_at"`
-	CreatedAt  int64         `db:"created_at"`
-	UpdatedAt  int64         `db:"updated_at"`
+	BillingYen sql.NullInt64 `db:"billing_yen"`
+	CreatedAt int64 `db:"created_at"`
+	UpdatedAt int64 `db:"updated_at"`
 }
 
 // 大会を取得する
@@ -590,11 +591,6 @@ func billingReportByCompetition(ctx context.Context, tenantDB dbOrTx, tenantID i
 	comp, err := retrieveCompetition(ctx, tenantDB, competitonID)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieveCompetition: %w", err)
-	}
-
-	// 大会が終了していない場合は、計算不要
-	if !comp.FinishedAt.Valid {
-		return &BillingReport{}, nil
 	}
 
 	// ランキングにアクセスした参加者のIDを取得する
