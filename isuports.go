@@ -1666,6 +1666,8 @@ type InitializeHandlerResult struct {
 func initializeHandler(c echo.Context) error {
 	out, err := exec.Command(initializeScript).CombinedOutput()
 	if err != nil {
+		fmt.Println("🚨 out: ", string(out))
+		fmt.Println("🚨 err: ", string(out))
 		return fmt.Errorf("error exec.Command: %s %e", string(out), err)
 	}
 	res := InitializeHandlerResult{
