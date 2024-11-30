@@ -718,8 +718,14 @@ func tenantsBillingHandler(c echo.Context) error {
 				return fmt.Errorf("failed to Select competition: %w", err)
 			}
 			for _, comp := range cs {
-				if comp.FinishedAt.Valid {
+				if comp.BillingYen.Valid {
 					tb.BillingYen += comp.BillingYen.Int64
+				} else {
+					report, err := billingReportByCompetition(ctx, tenantDB, t.ID, comp.ID, comp.FinishedAt.Valid)
+					if err != nil {
+						return fmt.Errorf("error billingReportByCompetition: %w", err)
+					}
+					tb.BillingYen += report.BillingYen
 				}
 			}
 			tenantBillings = append(tenantBillings, tb)
